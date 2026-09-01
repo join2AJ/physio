@@ -293,6 +293,16 @@
         </div>
       </div>
 
+      <!-- Per-patient report -->
+      <div class="panel panel-pad">
+        <h3>Per-Patient Report</h3>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+          <select id="patientSelect" style="max-width:300px;"><option value="">Select a patient…</option></select>
+          <span style="color:var(--muted); font-size:12px;">Tip: set the date range above to also see totals for that period.</span>
+        </div>
+        <div id="patientReport" style="display:none;"></div>
+      </div>
+
       <!-- Charts -->
       <div class="grid-2">
         <div class="panel panel-pad">
@@ -749,8 +759,70 @@
   function renderReports() {
     renderMonthlySummary();
     calculateRange();
+    populatePatientSelect();
+    renderPatientReport();
     renderDiagnoses();
     renderCharts();
+  }
+
+  function populatePatientSelect() {
+    const sel = document.getElementById('patientSelect');
+    if (!sel) return;
+    const prev = sel.value;
+    const names = [...new Set(visits.map(v => (v.patientName || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    sel.innerHTML = `<option value="">Select a patient…</option>` +
+      names.map(n => `<option value="${escapeAttr(n)}">${escapeAttr(n)}</option>`).join('');
+    if (names.includes(prev)) sel.value = prev;
+  }
+
+  function renderPatientReport() {
+    const sel = document.getElementById('patientSelect');
+    const box = document.getElementById('patientReport');
+    if (!sel || !box) return;
+    const name = sel.value;
+    if (!name) { box.style.display = 'none'; return; }
+
+    const mine = visits.filter(v => (v.patientName || "").trim() === name);
+    const sessions = mine.length;
+    const revenue = mine.reduce((s, v) => s + num(v.amount), 0);
+    const completed = mine.filter(v => v.status === "Completed").length;
+    const dates = mine.map(v => v.date).filter(Boolean).sort();
+    const firstVisit = dates[0] || "—";
+    const lastVisit = dates[dates.length - 1] || "—";
+    const dxCounts = {};
+    mine.forEach(v => { const d = (v.diagnosis || "").trim(); if (d) dxCounts[d] = (dxCounts[d] || 0) + 1; });
+    const diagnoses = Object.keys(dxCounts).join(", ") || "—";
+
+    // Optional date-range slice (uses the same range inputs above)
+    const start = document.getElementById('rangeStart').value;
+    const end = document.getElementById('rangeEnd').value;
+    let rangeBlock = "";
+    if (start && end) {
+      const s = start <= end ? start : end, e = start <= end ? end : start;
+      const inRange = mine.filter(v => v.date >= s && v.date <= e);
+      const rSessions = inRange.length;
+      const rRevenue = inRange.reduce((sum, v) => sum + num(v.amount), 0);
+      rangeBlock = `
+        <div style="grid-column:1/-1; margin-top:8px; padding-top:12px; border-top:1px dashed var(--border);">
+          <div class="field-label" style="padding:0; margin-bottom:8px;">In selected range (${s} to ${e})</div>
+          <div style="display:flex; gap:32px; flex-wrap:wrap;">
+            <div><div class="field-label" style="padding:0;">Sessions</div><div style="font-size:18px; font-weight:600; color:var(--teal);">${rSessions}</div></div>
+            <div><div class="field-label" style="padding:0;">Revenue</div><div style="font-size:18px; font-weight:600; color:var(--teal);">₹${rRevenue.toLocaleString('en-IN')}</div></div>
+          </div>
+        </div>`;
+    }
+
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="background:#FAFCFB; border:1px solid var(--border); border-radius:8px; padding:16px; display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:16px;">
+        <div><div class="field-label" style="padding:0;">Total Sessions</div><div style="font-size:22px; font-weight:700; color:var(--teal);">${sessions}</div></div>
+        <div><div class="field-label" style="padding:0;">Completed</div><div style="font-size:22px; font-weight:700; color:var(--teal);">${completed}</div></div>
+        <div><div class="field-label" style="padding:0;">Total Revenue</div><div style="font-size:22px; font-weight:700; color:var(--teal);">₹${revenue.toLocaleString('en-IN')}</div></div>
+        <div><div class="field-label" style="padding:0;">First Visit</div><div style="font-size:14px; font-weight:600;">${firstVisit}</div></div>
+        <div><div class="field-label" style="padding:0;">Last Visit</div><div style="font-size:14px; font-weight:600;">${lastVisit}</div></div>
+        <div style="grid-column:1/-1;"><div class="field-label" style="padding:0;">Diagnosis</div><div style="font-size:14px; font-weight:600;">${escapeAttr(diagnoses)}</div></div>
+        ${rangeBlock}
+      </div>`;
   }
 
   function renderMonthlySummary() {
@@ -773,22 +845,28 @@
     const rangeVisits = visits.filter(v => v.date >= startDate && v.date <= endDate);
     const totalAmount = rangeVisits.reduce((s, v) => s + num(v.amount), 0);
 
-    const patientCounts = {};
+    const patientStats = {};
     rangeVisits.forEach(v => {
       const name = (v.patientName || "").trim();
-      if (name) patientCounts[name] = (patientCounts[name] || 0) + 1;
+      if (!name) return;
+      if (!patientStats[name]) patientStats[name] = { count: 0, revenue: 0 };
+      patientStats[name].count += 1;
+      patientStats[name].revenue += num(v.amount);
     });
 
     document.getElementById('rangeTotalVisits').innerText = rangeVisits.length;
-    document.getElementById('rangeUniquePatients').innerText = Object.keys(patientCounts).length;
+    document.getElementById('rangeUniquePatients').innerText = Object.keys(patientStats).length;
     document.getElementById('rangeTotalAmount').innerText = totalAmount.toLocaleString('en-IN');
 
-    document.getElementById('rangePatientSessions').innerHTML = Object.entries(patientCounts)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, count]) => `
-        <div style="background:#fff; border:1px solid var(--border); padding:8px 12px; border-radius:6px; font-size:13.5px; display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:500;">${escapeAttr(name)}</span>
-          <span class="count-pill teal" style="margin:0;">${count} session${count === 1 ? '' : 's'}</span>
+    document.getElementById('rangePatientSessions').innerHTML = Object.entries(patientStats)
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([name, s]) => `
+        <div style="background:#fff; border:1px solid var(--border); padding:8px 12px; border-radius:6px; font-size:13.5px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeAttr(name)}">${escapeAttr(name)}</span>
+          <span style="display:flex; gap:6px; white-space:nowrap;">
+            <span class="count-pill teal" style="margin:0;">${s.count} session${s.count === 1 ? '' : 's'}</span>
+            <span class="count-pill" style="margin:0;">₹${s.revenue.toLocaleString('en-IN')}</span>
+          </span>
         </div>`).join('');
     resultsDiv.style.display = 'block';
   }
@@ -878,11 +956,13 @@
   document.getElementById("searchInput").addEventListener("input", render);
   document.getElementById("passwordInput").addEventListener("keydown", e => { if (e.key === 'Enter') handleLogin(); });
   document.getElementById("monthPicker").addEventListener("change", renderMonthlySummary);
-  document.getElementById("rangeStart").addEventListener("change", calculateRange);
-  document.getElementById("rangeEnd").addEventListener("change", calculateRange);
+  document.getElementById("rangeStart").addEventListener("change", () => { calculateRange(); renderPatientReport(); });
+  document.getElementById("rangeEnd").addEventListener("change", () => { calculateRange(); renderPatientReport(); });
   document.getElementById("clearRangeBtn").addEventListener("click", () => {
-    document.getElementById('rangeStart').value = ''; document.getElementById('rangeEnd').value = ''; calculateRange();
+    document.getElementById('rangeStart').value = ''; document.getElementById('rangeEnd').value = '';
+    calculateRange(); renderPatientReport();
   });
+  document.getElementById("patientSelect").addEventListener("change", renderPatientReport);
 
   // Tabs
   document.querySelectorAll('.tab').forEach(tab => {
