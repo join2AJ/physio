@@ -12,7 +12,7 @@ with u as (
   limit 1
 )
 insert into public.visits (id, user_id, date, patient_name, status, amount, diagnosis, reason)
-select gen_random_uuid()::text, u.id, d.date, d.name, d.status, d.amount, d.diagnosis, d.reason
+select gen_random_uuid()::text, u.id, d.date::date, d.name, d.status, d.amount::numeric, d.diagnosis, d.reason
 from u, (values
     ('2026-05-01','Kavita Joshi','Neck pain','Completed',600,null),
     ('2026-05-02','Lakshmi Iyer','Sciatica','Completed',700,null),
