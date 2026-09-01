@@ -196,6 +196,28 @@
   .modal-actions .btn { padding: 10px 18px; }
   .entry-error { color: var(--coral); background: var(--coral-light); border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 6px 0; display: none; }
 
+  /* Log table */
+  .table-scroll { overflow-x: auto; }
+  .log-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .log-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .log-table td { padding: 10px 12px; border-bottom: 1px solid #F0F3F1; vertical-align: middle; }
+  .log-table tbody tr:last-child td { border-bottom: none; }
+  .log-table tbody tr { cursor: pointer; transition: background .12s; }
+  .log-table tbody tr:hover { background: #FAFBFA; }
+  .log-table .ta-right { text-align: right; }
+  .log-table .mono { font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+  .log-table .muted { color: var(--muted); }
+  .log-table .pname { font-weight: 600; }
+  .nowrap { white-space: nowrap; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 100px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge.completed { background: #EAF3DE; color: #3B6D11; }
+  .badge.notcompleted { background: var(--coral-light); color: var(--coral); }
+  .badge.pending { background: #EEF2F0; color: var(--muted); }
+  .row-edit { padding: 5px 12px; font-size: 12px; }
+  .row-del { color: #B7C2BE; cursor: pointer; font-size: 15px; padding: 4px 8px; border-radius: 6px; }
+  .row-del:hover { background: var(--coral-light); color: var(--coral); }
+  .search-count { font-size: 12px; color: var(--muted); margin: 2px 0 14px; }
+
   @media (max-width: 900px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
     .grid-2 { grid-template-columns: 1fr; }
@@ -295,7 +317,7 @@
     <div class="tab-panel active" id="tab-log">
       <div class="topbar">
         <div class="search-input-wrap">
-          <input type="text" id="searchInput" placeholder="Search patient name..." />
+          <input type="text" id="searchInput" placeholder="&#128269; Search by patient name or diagnosis..." />
         </div>
         <div class="topbar-actions">
           <button class="btn ghost small" id="exportBtn">&#128190; Export CSV</button>
@@ -305,6 +327,7 @@
 
       <div class="stats" id="stats"></div>
 
+      <div class="search-count" id="searchCount"></div>
       <div id="groups"></div>
 
       <div class="empty-state" id="emptyState" style="display:none;">
@@ -646,7 +669,9 @@
   // ---------- Log operations ----------
   function groupByDate() {
     const query = (document.getElementById("searchInput")?.value || "").toLowerCase().trim();
-    const filtered = visits.filter(v => (v.patientName || "").toLowerCase().includes(query));
+    const filtered = query
+      ? visits.filter(v => (v.patientName || "").toLowerCase().includes(query) || (v.diagnosis || "").toLowerCase().includes(query))
+      : visits;
     const map = {};
     filtered.forEach(v => { (map[v.date] = map[v.date] || []).push(v); });
     return Object.keys(map).sort((a, b) => b.localeCompare(a)).map(date => ({ date, rows: map[date] }));
@@ -657,19 +682,25 @@
   function addTodayDate() { openEntryModal(todayStr()); }
   function addPatient(date) { openEntryModal(date); }
 
-  function openEntryModal(date) {
-    document.getElementById('mDate').value = date || todayStr();
+  let editingId = null;
+  function openEntryModal(date, editId) {
+    editingId = editId || null;
+    const v = editingId ? visits.find(x => x.id === editingId) : null;
+    const editing = !!v;
+    document.getElementById('entryModalTitle').innerText = editing ? 'Edit Patient Visit' : 'Add Patient Visit';
+    document.getElementById('entrySave').innerText = editing ? 'Update Visit' : 'Save Visit';
+    document.getElementById('mDate').value = editing ? v.date : (date || todayStr());
     document.getElementById('mDate').max = todayStr();
-    document.getElementById('mName').value = '';
-    document.getElementById('mDiagnosis').value = '';
-    document.getElementById('mStatus').value = 'Completed';
-    document.getElementById('mAmount').value = '';
-    document.getElementById('mReason').value = '';
-    document.getElementById('mReasonWrap').style.display = 'none';
+    document.getElementById('mName').value = editing ? (v.patientName || '') : '';
+    document.getElementById('mDiagnosis').value = editing ? (v.diagnosis || '') : '';
+    document.getElementById('mStatus').value = (editing && v.status === 'Not completed') ? 'Not completed' : 'Completed';
+    document.getElementById('mAmount').value = (editing && v.amount !== '' && v.amount != null) ? v.amount : '';
+    document.getElementById('mReason').value = editing ? (v.reason || '') : '';
+    document.getElementById('mReasonWrap').style.display = document.getElementById('mStatus').value === 'Not completed' ? 'block' : 'none';
     hideEntryError();
-    const names = [...new Set(visits.map(v => (v.patientName || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const names = [...new Set(visits.map(x => (x.patientName || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     document.getElementById('mNamesList').innerHTML = names.map(n => `<option value="${escapeAttr(n)}"></option>`).join('');
-    const dxs = [...new Set(visits.map(v => (v.diagnosis || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const dxs = [...new Set(visits.map(x => (x.diagnosis || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     document.getElementById('mDxList').innerHTML = dxs.map(d => `<option value="${escapeAttr(d)}"></option>`).join('');
     document.getElementById('entryModal').classList.add('open');
     setTimeout(() => document.getElementById('mName').focus(), 60);
@@ -698,13 +729,18 @@
     if (status === 'Not completed' && !reason) return showEntryError('Please add a reason for a not-completed visit.');
 
     const now = new Date();
-    visits.push({
-      id: uid(), date, patientName: name, status,
-      amount: amountRaw === '' ? '' : String(amount),
-      diagnosis, reason: status === 'Not completed' ? reason : '',
-      updatedAt: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-                 ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
+    const stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                  ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const amountStr = amountRaw === '' ? '' : String(amount);
+    const reasonStr = status === 'Not completed' ? reason : '';
+
+    if (editingId) {
+      const v = visits.find(x => x.id === editingId);
+      if (v) Object.assign(v, { date, patientName: name, diagnosis, status, amount: amountStr, reason: reasonStr, updatedAt: stamp });
+    } else {
+      visits.push({ id: uid(), date, patientName: name, status, amount: amountStr, diagnosis, reason: reasonStr, updatedAt: stamp });
+    }
+    editingId = null;
     closeEntryModal();
     render();
     await saveAll();
@@ -796,20 +832,42 @@
       <div class="stat teal"><div class="label">Total revenue</div><div class="value">&#8377;${revenue.toLocaleString('en-IN')}</div></div>`;
   }
 
+  function statusBadge(status) {
+    if (status === "Completed") return `<span class="badge completed">Completed</span>`;
+    if (status === "Not completed") return `<span class="badge notcompleted">Not completed</span>`;
+    return `<span class="badge pending">Pending</span>`;
+  }
+
   function render() {
     renderStats();
     renderReports();
     const groups = groupByDate();
     const container = document.getElementById("groups");
-    const today = todayStr();
     document.getElementById("emptyState").style.display = groups.length ? "none" : "block";
 
-    // build a datalist of known diagnoses for quick reuse
-    const knownDx = [...new Set(visits.map(v => (v.diagnosis || "").trim()).filter(Boolean))];
-    const dxOptions = knownDx.map(d => `<option value="${escapeAttr(d)}"></option>`).join("");
+    // search result count
+    const q = (document.getElementById("searchInput")?.value || "").trim();
+    const shown = groups.reduce((s, g) => s + g.rows.length, 0);
+    const countEl = document.getElementById("searchCount");
+    if (countEl) countEl.innerText = q ? `Showing ${shown} matching visit${shown === 1 ? "" : "s"} for "${q}"` : "";
 
     container.innerHTML = groups.map(g => {
       const dayAmount = g.rows.reduce((s, v) => s + num(v.amount), 0);
+      const rows = g.rows.map(v => {
+        const amt = (v.amount !== "" && v.amount != null) ? `₹${num(v.amount).toLocaleString('en-IN')}` : "—";
+        const reasonTitle = v.status === "Not completed" && v.reason ? ` title="Reason: ${escapeAttr(v.reason)}"` : "";
+        return `
+          <tr onclick="openEntryModal('${g.date}','${v.id}')"${reasonTitle}>
+            <td class="pname">${escapeAttr(v.patientName) || '<span class="muted">—</span>'}</td>
+            <td class="muted">${escapeAttr(v.diagnosis) || '—'}</td>
+            <td>${statusBadge(v.status)}</td>
+            <td class="ta-right mono">${amt}</td>
+            <td class="ta-right nowrap" onclick="event.stopPropagation()">
+              <button class="btn ghost small row-edit" onclick="openEntryModal('${g.date}','${v.id}')">View / Edit</button>
+              <span class="row-del" onclick="deleteVisit('${v.id}')" title="Delete">&#10005;</span>
+            </td>
+          </tr>`;
+      }).join("");
       return `
       <div class="date-group">
         <div class="date-header">
@@ -820,53 +878,19 @@
           </div>
           <button class="btn ghost small" onclick="addPatient('${g.date}')">+ Add patient</button>
         </div>
-        <div class="patients">
-          <div class="header-row">
-            <div class="field-label">Patient name</div>
-            <div class="field-label">Diagnosis</div>
-            <div class="field-label">Visit status</div>
-            <div class="field-label">Amount</div>
-            <div class="field-label">Action</div>
-            <div></div>
-          </div>
-          ${g.rows.map(v => {
-            const isNotCompleted = v.status === "Not completed";
-            const isCompleted = v.status === "Completed";
-            const statusClass = isNotCompleted ? "status-noshow" : (isCompleted ? "status-completed" : "status-pending");
-            const isExpanded = expandedReasonIds.has(v.id);
-            return `
-            <div class="patient-row" data-id="${v.id}">
-              <input type="text" class="p-name" placeholder="Patient name" value="${escapeAttr(v.patientName)}" oninput="updateField('${v.id}','patientName',this.value)" />
-              <input type="text" class="p-diagnosis" list="dxList" placeholder="Diagnosis" value="${escapeAttr(v.diagnosis)}" oninput="updateField('${v.id}','diagnosis',this.value)" />
-              <select class="p-status ${statusClass}" onchange="handleStatusChange(this)">
-                <option value="" disabled ${!v.status ? "selected" : ""}>Visit status</option>
-                <option value="Completed" ${isCompleted ? "selected" : ""}>Completed</option>
-                <option value="Not completed" ${isNotCompleted ? "selected" : ""}>Not completed</option>
-              </select>
-              <input type="number" class="p-amount" placeholder="0" value="${escapeAttr(v.amount)}" oninput="updateField('${v.id}','amount',this.value)" />
-              <button class="btn save-row-btn" onclick="savePatientRow('${v.id}',this)">Save</button>
-              <div class="del-icon" onclick="deleteVisit('${v.id}')" title="Delete">&#10005;</div>
-            </div>
-            <div style="grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; padding:0 8px 6px; font-size:11px; color:var(--muted);">
-              <span>${v.updatedAt ? 'Last modified: ' + escapeAttr(v.updatedAt) : ''}</span>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <span>Move to date:</span>
-                <input type="date" class="date-input" style="padding:2px 6px; font-size:12px;" value="${v.date}" max="${today}" onchange="updateSingleVisitDate('${v.id}',this.value)" />
-              </div>
-            </div>
-            <div class="reason-row ${isNotCompleted && isExpanded ? "" : "hidden"}" data-for="${v.id}">
-              <div class="field-label">Reason for not completed</div>
-              <input type="text" class="p-reason" placeholder="Enter reason..." value="${escapeAttr(v.reason)}" oninput="updateField('${v.id}','reason',this.value)" />
-            </div>
-            ${isNotCompleted && !isExpanded ? `
-              <div class="reason-chip" onclick="toggleReason('${v.id}')">
-                <span>${v.reason ? "Reason: " + escapeAttr(v.reason) : "No reason added yet"}</span>
-                <span class="edit-hint">Tap to edit</span>
-              </div>` : ""}`;
-          }).join("")}
+        <div class="table-scroll">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Patient</th><th>Diagnosis</th><th>Status</th>
+                <th class="ta-right">Amount</th><th class="ta-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
         </div>
       </div>`;
-    }).join("") + `<datalist id="dxList">${dxOptions}</datalist>`;
+    }).join("");
   }
 
   // ---------- Reports ----------
