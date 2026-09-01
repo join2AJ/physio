@@ -69,6 +69,10 @@
   .owner-photo:hover .photo-overlay { opacity: 1; }
   .clinic-title-block h1 { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 24px; margin: 0; letter-spacing: -0.02em; }
   .clinic-title-block p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .greeting { font-size: 13.5px !important; color: var(--teal) !important; font-weight: 500; margin-top: 6px !important; }
+  .greeting strong { font-weight: 700; }
+  .edit-name { cursor: pointer; color: var(--teal-mid); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; margin-left: 4px; }
+  .edit-name:hover { color: var(--teal); }
 
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
   .topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -218,6 +222,7 @@
         <div class="clinic-title-block">
           <h1>Dr. Vikas Patient Monitoring System</h1>
           <p>Track patient visits, status, diagnoses and payments securely in the cloud</p>
+          <p id="greeting" class="greeting"></p>
         </div>
         <input type="file" id="photoInput" accept="image/*" style="display:none;" />
       </div>
@@ -324,14 +329,15 @@
   //  this key. See README.md / schema.sql for the required setup.
   //  NOTE: the URL must be the BASE project URL only — no /rest/v1/.
   // ============================================================
-  const SUPABASE_URL = "https://ofbonqvttorohiurnnpw.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_-OMSRxtogGMuzR5_Mki7dA_CBZHJ3GL";
+  const SUPABASE_URL = "https://xgkzjggazeodwwdozjez.supabase.co";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE";
 
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const PHOTO_KEY = "dr-vikas-owner-photo-v1";
   let visits = [];
   let currentUser = null;
+  let currentProfile = { full_name: "" };
   let expandedReasonIds = new Set();
   let saveTimer = null;
   let charts = {};
@@ -368,7 +374,47 @@
     document.getElementById('authContainer').style.display = 'none';
     document.querySelector('.wrap').style.display = 'block';
     document.getElementById('monthPicker').value = currentMonthStr();
+    await loadProfile();
     await loadFromCloud();
+  }
+
+  // ---------- Profile / personalised name ----------
+  async function loadProfile() {
+    try {
+      const { data, error } = await supabaseClient
+        .from('profiles').select('full_name').eq('id', currentUser.id).maybeSingle();
+      if (error) throw error;
+      currentProfile.full_name = (data && data.full_name) ? data.full_name : "";
+    } catch (e) {
+      console.error("Profile load failed", e);
+      currentProfile.full_name = "";
+    }
+    renderGreeting();
+    // First visit with no name yet — invite them to set it.
+    if (!currentProfile.full_name) editName();
+  }
+
+  function renderGreeting() {
+    const el = document.getElementById('greeting');
+    if (!el) return;
+    const name = currentProfile.full_name;
+    el.innerHTML = name
+      ? `Welcome, <strong>${escapeAttr(name)}</strong> <span class="edit-name" id="editNameBtn">edit</span>`
+      : `<span class="edit-name" id="editNameBtn">+ Set your name</span>`;
+    const btn = document.getElementById('editNameBtn');
+    if (btn) btn.addEventListener('click', editName);
+  }
+
+  async function editName() {
+    const name = prompt("Enter the name to show in the app (e.g. Dr. Vikas):", currentProfile.full_name || "");
+    if (name === null) return; // cancelled
+    currentProfile.full_name = name.trim();
+    renderGreeting();
+    try {
+      const { error } = await supabaseClient.from('profiles')
+        .upsert({ id: currentUser.id, full_name: currentProfile.full_name, updated_at: new Date().toISOString() });
+      if (error) throw error;
+    } catch (e) { console.error("Saving name failed", e); alert("Could not save your name. Please try again."); }
   }
 
   async function handleLogin() {
@@ -400,7 +446,9 @@
   async function handleLogout() {
     await supabaseClient.auth.signOut();
     currentUser = null;
+    currentProfile = { full_name: "" };
     visits = [];
+    const g = document.getElementById('greeting'); if (g) g.innerHTML = '';
     document.getElementById('authContainer').style.display = 'block';
     document.querySelector('.wrap').style.display = 'none';
   }
