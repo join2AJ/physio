@@ -220,7 +220,7 @@
           <div class="photo-overlay">Change<br/>photo</div>
         </div>
         <div class="clinic-title-block">
-          <h1>Dr. Vikas Patient Monitoring System</h1>
+          <h1 id="appTitle">Patient Monitoring System</h1>
           <p>Track patient visits, status, diagnoses and payments securely in the cloud</p>
           <p id="greeting" class="greeting"></p>
         </div>
@@ -389,30 +389,60 @@
       console.error("Profile load failed", e);
       currentProfile.full_name = "";
     }
+    // First login with no name yet — ask for it before showing the app.
+    if (!currentProfile.full_name) await askNameFirstTime();
+    applyPersonalization();
+  }
+
+  // Build "Dr. <name> Patient Monitoring System", avoiding a double "Dr.".
+  function titledName(name) {
+    const n = (name || "").trim();
+    if (!n) return "";
+    return /^dr\.?\s/i.test(n) ? n : "Dr. " + n;
+  }
+
+  function applyPersonalization() {
+    const name = currentProfile.full_name;
+    const title = name ? `${titledName(name)} Patient Monitoring System` : "Patient Monitoring System";
+    const h1 = document.getElementById('appTitle');
+    if (h1) h1.innerText = title;
+    document.title = title;
     renderGreeting();
-    // First visit with no name yet — invite them to set it.
-    if (!currentProfile.full_name) editName();
   }
 
   function renderGreeting() {
     const el = document.getElementById('greeting');
     if (!el) return;
-    const name = currentProfile.full_name;
-    el.innerHTML = name
-      ? `Welcome, <strong>${escapeAttr(name)}</strong> <span class="edit-name" id="editNameBtn">edit</span>`
+    el.innerHTML = currentProfile.full_name
+      ? `<span class="edit-name" id="editNameBtn">Edit name</span>`
       : `<span class="edit-name" id="editNameBtn">+ Set your name</span>`;
     const btn = document.getElementById('editNameBtn');
-    if (btn) btn.addEventListener('click', editName);
+    if (btn) btn.addEventListener('click', () => editName(false));
   }
 
-  async function editName() {
-    const name = prompt("Enter the name to show in the app (e.g. Dr. Vikas):", currentProfile.full_name || "");
-    if (name === null) return; // cancelled
-    currentProfile.full_name = name.trim();
-    renderGreeting();
+  // Ask on first login; re-ask up to a couple of times if left blank.
+  async function askNameFirstTime() {
+    for (let i = 0; i < 3; i++) {
+      const name = prompt("Welcome! Please enter your name to personalise the app (e.g. Vikas):", "");
+      if (name === null) return;               // user cancelled — they can set it later
+      if (name.trim()) { await saveName(name.trim()); return; }
+      alert("Please enter a name so the app can be personalised for you.");
+    }
+  }
+
+  async function editName(required) {
+    const name = prompt("Enter the name to show in the app (e.g. Vikas):", currentProfile.full_name || "");
+    if (name === null) return;
+    if (!name.trim()) return;
+    await saveName(name.trim());
+  }
+
+  async function saveName(name) {
+    currentProfile.full_name = name;
+    applyPersonalization();
     try {
       const { error } = await supabaseClient.from('profiles')
-        .upsert({ id: currentUser.id, full_name: currentProfile.full_name, updated_at: new Date().toISOString() });
+        .upsert({ id: currentUser.id, full_name: name, updated_at: new Date().toISOString() });
       if (error) throw error;
     } catch (e) { console.error("Saving name failed", e); alert("Could not save your name. Please try again."); }
   }
@@ -449,6 +479,8 @@
     currentProfile = { full_name: "" };
     visits = [];
     const g = document.getElementById('greeting'); if (g) g.innerHTML = '';
+    const h1 = document.getElementById('appTitle'); if (h1) h1.innerText = 'Patient Monitoring System';
+    document.title = 'Patient Monitoring System';
     document.getElementById('authContainer').style.display = 'block';
     document.querySelector('.wrap').style.display = 'none';
   }
