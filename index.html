@@ -435,9 +435,24 @@
     document.getElementById('authContainer').style.display = 'none';
     document.querySelector('.wrap').style.display = 'block';
     document.getElementById('monthPicker').value = currentMonthStr();
+    resetIdleTimer();
     await loadProfile();
     await loadFromCloud();
   }
+
+  // ---------- Auto sign-out after inactivity (shared-device safety) ----------
+  const IDLE_LIMIT_MS = 15 * 60 * 1000;   // 15 minutes
+  let idleTimer = null;
+  function resetIdleTimer() {
+    if (!currentUser) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(async () => {
+      await handleLogout();
+      showMsg("You were signed out automatically after 15 minutes of inactivity.", false);
+    }, IDLE_LIMIT_MS);
+  }
+  ['click', 'keydown', 'mousemove', 'touchstart', 'scroll'].forEach(ev =>
+    document.addEventListener(ev, resetIdleTimer, { passive: true }));
 
   // ---------- Profile / personalised name ----------
   async function loadProfile() {
@@ -536,6 +551,7 @@
 
   async function handleLogout() {
     await supabaseClient.auth.signOut();
+    clearTimeout(idleTimer);
     currentUser = null;
     currentProfile = { full_name: "" };
     visits = [];
@@ -685,6 +701,12 @@
     }
     if (status === 'Not completed' && !reason) return showEntryError('Please add a reason for a not-completed visit.');
 
+    // Duplicate guard: warn if this patient already has a visit on this date (new entries only).
+    if (!editingId) {
+      const dup = visits.some(v => v.date === date && (v.patientName || '').trim().toLowerCase() === name.toLowerCase());
+      if (dup && !confirm(`${name} already has a visit logged on ${date}. Add another visit for the same day?`)) return;
+    }
+
     const now = new Date();
     const stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
                   ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -774,6 +796,7 @@
             <td class="muted">${escapeAttr(v.diagnosis) || '—'}</td>
             <td>${statusBadge(v.status)}</td>
             <td class="ta-right mono">${amt}</td>
+            <td class="muted nowrap" style="font-size:11.5px;">${v.updatedAt ? escapeAttr(v.updatedAt) : "—"}</td>
             <td class="ta-right nowrap" onclick="event.stopPropagation()">
               <button class="btn ghost small row-edit" onclick="openEntryModal('${g.date}','${v.id}')">View / Edit</button>
               <span class="row-del" onclick="deleteVisit('${v.id}')" title="Delete">&#10005;</span>
@@ -794,7 +817,7 @@
             <thead>
               <tr>
                 <th>Patient</th><th>Diagnosis</th><th>Status</th>
-                <th class="ta-right">Amount</th><th class="ta-right">Action</th>
+                <th class="ta-right">Amount</th><th>Last updated</th><th class="ta-right">Action</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
