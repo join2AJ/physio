@@ -183,6 +183,19 @@
   .sync-dot.saving { background: var(--amber); }
   .sync-dot.error { background: var(--coral); }
 
+  /* Entry modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(15,42,40,0.45); display: none; align-items: flex-start; justify-content: center; padding: 24px 16px; z-index: 100; overflow-y: auto; }
+  .modal-overlay.open { display: flex; }
+  .modal-card { background: var(--card); border-radius: 16px; padding: 22px; width: 100%; max-width: 440px; box-shadow: 0 12px 44px rgba(15,42,40,0.28); margin: 24px 0 40px; }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .modal-head h3 { margin: 0; font-family: 'Poppins', sans-serif; font-size: 18px; color: var(--teal); }
+  .modal-close { cursor: pointer; font-size: 18px; color: var(--muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+  .modal-close:hover { background: var(--paper); }
+  .modal-card label.field-label { display: block; margin: 14px 0 4px; padding: 0; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 22px; }
+  .modal-actions .btn { padding: 10px 18px; }
+  .entry-error { color: var(--coral); background: var(--coral-light); border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 6px 0; display: none; }
+
   @media (max-width: 900px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
     .grid-2 { grid-template-columns: 1fr; }
@@ -209,6 +222,47 @@
     </div>
     <button class="btn" id="loginBtn" style="width: 100%; justify-content: center; margin-bottom: 10px;">Sign In</button>
     <button class="btn ghost" id="signupBtn" style="width: 100%; justify-content: center;">Create Account</button>
+  </div>
+
+  <!-- Add / Edit Visit Modal -->
+  <div id="entryModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="entryModalTitle">Add Patient Visit</h3>
+        <span class="modal-close" id="entryModalClose" title="Close">&#10005;</span>
+      </div>
+      <div id="entryError" class="entry-error"></div>
+
+      <label class="field-label">Visit date</label>
+      <input type="date" id="mDate" />
+
+      <label class="field-label">Patient name *</label>
+      <input type="text" id="mName" list="mNamesList" placeholder="e.g. Ramesh Kumar" autocomplete="off" />
+
+      <label class="field-label">Diagnosis</label>
+      <input type="text" id="mDiagnosis" list="mDxList" placeholder="e.g. Lower back pain" autocomplete="off" />
+
+      <label class="field-label">Visit status *</label>
+      <select id="mStatus">
+        <option value="Completed">Completed</option>
+        <option value="Not completed">Not completed</option>
+      </select>
+
+      <div id="mReasonWrap" style="display:none;">
+        <label class="field-label" style="color:var(--coral);">Reason for not completed *</label>
+        <input type="text" id="mReason" placeholder="e.g. Payment pending" autocomplete="off" />
+      </div>
+
+      <label class="field-label">Amount (&#8377;)</label>
+      <input type="number" id="mAmount" min="0" step="1" placeholder="0" inputmode="numeric" />
+
+      <div class="modal-actions">
+        <button class="btn ghost" id="entryCancel">Cancel</button>
+        <button class="btn" id="entrySave">Save Visit</button>
+      </div>
+    </div>
+    <datalist id="mNamesList"></datalist>
+    <datalist id="mDxList"></datalist>
   </div>
 
   <!-- Main App -->
@@ -325,6 +379,17 @@
           <h3>Visit Status Breakdown</h3>
           <div class="chart-box"><canvas id="statusChart"></canvas></div>
         </div>
+      </div>
+
+      <!-- Audit trail / activity log -->
+      <div class="panel panel-pad">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <h3 style="margin:0;">Activity Log (Audit Trail)</h3>
+          <button class="btn ghost small" id="refreshAuditBtn">Refresh</button>
+        </div>
+        <p style="color:var(--muted); font-size:12px; margin:6px 0 12px;">A tamper-evident record of every add, edit and delete — who, what and when. Cannot be altered from the app.</p>
+        <div id="auditList" class="bar-list"></div>
+        <div id="auditEmpty" class="empty-state" style="display:none; padding:24px;">No activity yet, or the audit trail (audit_trail.sql) has not been installed in Supabase.</div>
       </div>
 
     </div>
@@ -587,13 +652,62 @@
     return Object.keys(map).sort((a, b) => b.localeCompare(a)).map(date => ({ date, rows: map[date] }));
   }
 
-  function addTodayDate() {
-    visits.push({ id: uid(), date: todayStr(), patientName: "", status: "", amount: "", diagnosis: "", reason: "", updatedAt: "" });
-    render();
+  // Adding a visit now opens a clean modal form (validated) instead of
+  // injecting an empty inline row.
+  function addTodayDate() { openEntryModal(todayStr()); }
+  function addPatient(date) { openEntryModal(date); }
+
+  function openEntryModal(date) {
+    document.getElementById('mDate').value = date || todayStr();
+    document.getElementById('mDate').max = todayStr();
+    document.getElementById('mName').value = '';
+    document.getElementById('mDiagnosis').value = '';
+    document.getElementById('mStatus').value = 'Completed';
+    document.getElementById('mAmount').value = '';
+    document.getElementById('mReason').value = '';
+    document.getElementById('mReasonWrap').style.display = 'none';
+    hideEntryError();
+    const names = [...new Set(visits.map(v => (v.patientName || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    document.getElementById('mNamesList').innerHTML = names.map(n => `<option value="${escapeAttr(n)}"></option>`).join('');
+    const dxs = [...new Set(visits.map(v => (v.diagnosis || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    document.getElementById('mDxList').innerHTML = dxs.map(d => `<option value="${escapeAttr(d)}"></option>`).join('');
+    document.getElementById('entryModal').classList.add('open');
+    setTimeout(() => document.getElementById('mName').focus(), 60);
   }
-  function addPatient(date) {
-    visits.push({ id: uid(), date, patientName: "", status: "", amount: "", diagnosis: "", reason: "", updatedAt: "" });
+  function closeEntryModal() { document.getElementById('entryModal').classList.remove('open'); }
+  function showEntryError(m) { const e = document.getElementById('entryError'); e.innerText = m; e.style.display = 'block'; }
+  function hideEntryError() { document.getElementById('entryError').style.display = 'none'; }
+
+  async function saveNewVisit() {
+    const date = document.getElementById('mDate').value;
+    const name = document.getElementById('mName').value.trim();
+    const diagnosis = document.getElementById('mDiagnosis').value.trim();
+    const status = document.getElementById('mStatus').value;
+    const amountRaw = document.getElementById('mAmount').value.trim();
+    const reason = document.getElementById('mReason').value.trim();
+
+    if (!date) return showEntryError('Please choose a visit date.');
+    if (date > todayStr()) return showEntryError('Future dates are not allowed.');
+    if (!name) return showEntryError('Patient name is required.');
+    let amount = '';
+    if (amountRaw !== '') {
+      amount = Number(amountRaw);
+      if (isNaN(amount) || amount < 0) return showEntryError('Amount must be a positive number.');
+      if (amount > 100000 && !confirm('Amount ₹' + amount.toLocaleString('en-IN') + ' is unusually large. Save anyway?')) return;
+    }
+    if (status === 'Not completed' && !reason) return showEntryError('Please add a reason for a not-completed visit.');
+
+    const now = new Date();
+    visits.push({
+      id: uid(), date, patientName: name, status,
+      amount: amountRaw === '' ? '' : String(amount),
+      diagnosis, reason: status === 'Not completed' ? reason : '',
+      updatedAt: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                 ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+    closeEntryModal();
     render();
+    await saveAll();
   }
 
   function updateField(id, field, value) {
@@ -763,6 +877,38 @@
     renderPatientReport();
     renderDiagnoses();
     renderCharts();
+    loadAuditLog();
+  }
+
+  async function loadAuditLog() {
+    const listEl = document.getElementById('auditList');
+    const emptyEl = document.getElementById('auditEmpty');
+    if (!listEl) return;
+    let rows = [];
+    try {
+      const { data, error } = await supabaseClient
+        .from('audit_log').select('action,patient_name,changed_at')
+        .order('changed_at', { ascending: false }).limit(50);
+      if (error) throw error;
+      rows = data || [];
+    } catch (e) {
+      // audit_trail.sql not installed yet, or no access.
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    if (rows.length === 0) { listEl.innerHTML = ''; emptyEl.style.display = 'block'; return; }
+    emptyEl.style.display = 'none';
+    const colour = { INSERT: 'var(--teal)', UPDATE: 'var(--amber)', DELETE: 'var(--coral)' };
+    const verb = { INSERT: 'Added', UPDATE: 'Edited', DELETE: 'Deleted' };
+    listEl.innerHTML = rows.map(r => {
+      const when = new Date(r.changed_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; padding:8px 10px; background:#fff; border:1px solid var(--border); border-radius:8px;">
+          <span><strong style="color:${colour[r.action] || 'var(--ink)'};">${verb[r.action] || escapeAttr(r.action)}</strong> ${r.patient_name ? '— ' + escapeAttr(r.patient_name) : ''}</span>
+          <span style="color:var(--muted); white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:11.5px;">${when}</span>
+        </div>`;
+    }).join('');
   }
 
   function populatePatientSelect() {
@@ -953,6 +1099,17 @@
   document.getElementById("logoutBtn").addEventListener("click", handleLogout);
   document.getElementById("addDateBtn").addEventListener("click", addTodayDate);
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
+
+  // Entry modal wiring
+  document.getElementById("entrySave").addEventListener("click", saveNewVisit);
+  document.getElementById("entryCancel").addEventListener("click", closeEntryModal);
+  document.getElementById("entryModalClose").addEventListener("click", closeEntryModal);
+  document.getElementById("mStatus").addEventListener("change", (e) => {
+    document.getElementById("mReasonWrap").style.display = e.target.value === "Not completed" ? "block" : "none";
+  });
+  document.getElementById("mAmount").addEventListener("keydown", (e) => { if (e.key === "Enter") saveNewVisit(); });
+  document.getElementById("entryModal").addEventListener("click", (e) => { if (e.target.id === "entryModal") closeEntryModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeEntryModal(); });
   document.getElementById("searchInput").addEventListener("input", render);
   document.getElementById("passwordInput").addEventListener("keydown", e => { if (e.key === 'Enter') handleLogin(); });
   document.getElementById("monthPicker").addEventListener("change", renderMonthlySummary);
@@ -963,6 +1120,7 @@
     calculateRange(); renderPatientReport();
   });
   document.getElementById("patientSelect").addEventListener("change", renderPatientReport);
+  document.getElementById("refreshAuditBtn").addEventListener("click", loadAuditLog);
 
   // Tabs
   document.querySelectorAll('.tab').forEach(tab => {
