@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dr. Vikas | Patient Monitoring System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<!-- Supabase JS SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Chart.js for graphical reports -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #0F2A28;
+    --teal: #0F6E56;
+    --teal-light: #E1F5EE;
+    --teal-mid: #5DCAA5;
+    --coral: #D85A30;
+    --coral-light: #FAECE7;
+    --coral-mid: #F0997B;
+    --amber: #B8860B;
+    --amber-light: #FBF3DE;
+    --paper: #F6F8F7;
+    --card: #FFFFFF;
+    --border: #E2E8E5;
+    --muted: #6B7A76;
+    --shadow: 0 1px 2px rgba(15,42,40,0.04), 0 4px 16px rgba(15,42,40,0.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    padding: 32px 24px 80px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; display: none; }
+
+  /* Auth */
+  #authContainer {
+    max-width: 420px;
+    margin: 80px auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: var(--shadow);
+  }
+  #authContainer h2 { font-family: 'Poppins', sans-serif; margin-top: 0; font-size: 22px; color: var(--teal); }
+  .auth-msg { font-size: 13px; margin-bottom: 12px; display: none; padding: 10px 12px; border-radius: 8px; }
+  .auth-msg.error { color: var(--coral); background: var(--coral-light); }
+  .auth-msg.ok { color: var(--teal); background: var(--teal-light); }
+
+  .clinic-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
+  .clinic-header-left { display: flex; align-items: center; gap: 18px; }
+  .owner-photo {
+    position: relative; width: 72px; height: 72px; flex-shrink: 0; border-radius: 50%;
+    border: 2px solid var(--teal-mid); background: var(--teal-light); overflow: hidden;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .owner-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .owner-photo .placeholder-icon { font-size: 24px; color: var(--teal-mid); }
+  .owner-photo .photo-overlay {
+    position: absolute; inset: 0; background: rgba(15,42,40,0.55); color: #fff; font-size: 10px;
+    font-weight: 600; display: flex; align-items: center; justify-content: center; text-align: center;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .owner-photo:hover .photo-overlay { opacity: 1; }
+  .clinic-title-block h1 { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 24px; margin: 0; letter-spacing: -0.02em; }
+  .clinic-title-block p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .search-input-wrap { flex-grow: 1; min-width: 220px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--teal); color: #fff; border: none;
+    padding: 9px 16px; border-radius: 10px; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13.5px;
+    cursor: pointer; transition: background 0.15s, transform 0.1s;
+  }
+  .btn:hover { background: #0C5A46; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn.ghost { background: transparent; color: var(--teal); border: 1.5px solid var(--teal-mid); }
+  .btn.ghost:hover { background: var(--teal-light); }
+  .btn.small { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
+  .btn.save-row-btn { background: var(--teal); color: #fff; padding: 6px 12px; font-size: 12.5px; border-radius: 6px; }
+  .btn.save-row-btn.saved { background: #2E7D32; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 10px 18px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer;
+    border: none; background: none; border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+    font-family: 'Inter', sans-serif;
+  }
+  .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .stat .label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 500; margin-top: 4px; }
+  .stat.teal .value { color: var(--teal); }
+  .stat.coral .value { color: var(--coral); }
+  .stat.amber .value { color: var(--amber); }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 24px; overflow: hidden; box-shadow: var(--shadow); }
+  .panel-pad { padding: 18px; }
+  .panel h3 { margin: 0 0 12px; font-family: 'Poppins', sans-serif; font-size: 16px; }
+
+  .date-group { background: var(--card); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 18px; overflow: hidden; box-shadow: var(--shadow); }
+  .date-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: linear-gradient(180deg, #FAFCFB, #F4F8F6); border-bottom: 1px solid var(--border); }
+  .date-header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; row-gap: 6px; }
+  .date-input {
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: 'JetBrains Mono', monospace;
+    font-weight: 500; font-size: 13.5px; color: var(--teal); background: #fff; cursor: pointer;
+  }
+  .count-pill { font-size: 12px; color: var(--muted); background: #EEF2F0; padding: 3px 9px; border-radius: 100px; white-space: nowrap; }
+  .count-pill.coral { color: var(--coral); background: var(--coral-light); }
+  .count-pill.teal { color: var(--teal); background: var(--teal-light); }
+
+  .patients { padding: 6px 10px 10px; }
+  .patient-row {
+    display: grid; grid-template-columns: 1.5fr 1.3fr 1fr 0.8fr 70px 30px; gap: 8px; align-items: center;
+    padding: 10px 8px; border-radius: 10px; transition: background 0.15s;
+  }
+  .patient-row:hover { background: #FAFBFA; }
+  .patient-row + .patient-row { border-top: 1px solid #F0F3F1; }
+
+  .field-label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 8px; margin-bottom: 2px; }
+  .header-row { display: grid; grid-template-columns: 1.5fr 1.3fr 1fr 0.8fr 70px 30px; gap: 8px; padding: 4px 8px 6px; }
+
+  input[type=text], input[type=number], input[type=date], input[type=month], input[type=email], input[type=password], select {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-family: 'Inter', sans-serif;
+    font-size: 13.5px; color: var(--ink); background: #fff; outline: none; transition: border 0.15s, box-shadow 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--teal-mid); box-shadow: 0 0 0 3px var(--teal-light); }
+  input[list]::-webkit-calendar-picker-indicator { opacity: 0.5; }
+
+  select.status-completed { background: #EAF3DE; color: #3B6D11; font-weight: 500; border-color: #C0DD97; }
+  select.status-noshow { background: var(--coral-light); color: var(--coral); font-weight: 500; border-color: var(--coral-mid); }
+  select.status-pending { background: #fff; color: var(--muted); font-weight: 500; border-color: var(--border); }
+
+  .reason-row { grid-column: 1 / -1; margin: -2px 0 6px; padding: 0 8px; }
+  .reason-row input { border-color: var(--coral-mid); background: #FFFBFA; }
+  .reason-row .field-label { color: var(--coral); }
+  .reason-row.hidden { display: none; }
+
+  .reason-chip {
+    grid-column: 1 / -1; margin: -4px 8px 8px; padding: 6px 10px; background: var(--coral-light);
+    border: 1px dashed var(--coral-mid); border-radius: 8px; font-size: 12.5px; color: var(--coral); cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .reason-chip .edit-hint { font-size: 11px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+
+  .del-icon {
+    display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px;
+    color: #B7C2BE; cursor: pointer; font-size: 16px; transition: background 0.15s, color 0.15s;
+  }
+  .del-icon:hover { background: var(--coral-light); color: var(--coral); }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+
+  .bar-list { display: flex; flex-direction: column; gap: 10px; }
+  .bar-item { display: grid; grid-template-columns: 160px 1fr auto; gap: 12px; align-items: center; font-size: 13px; }
+  .bar-track { background: #EEF2F0; border-radius: 100px; height: 14px; overflow: hidden; }
+  .bar-fill { background: var(--teal); height: 100%; border-radius: 100px; }
+  .bar-fill.coral { background: var(--coral); }
+  .bar-value { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+
+  .chart-box { position: relative; height: 300px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  .sync-badge { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal-mid); }
+  .sync-dot.saving { background: var(--amber); }
+  .sync-dot.error { background: var(--coral); }
+
+  @media (max-width: 900px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .patient-row, .header-row { grid-template-columns: 1fr; gap: 6px; }
+    .del-icon { justify-self: end; }
+    .bar-item { grid-template-columns: 120px 1fr auto; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Authentication -->
+  <div id="authContainer">
+    <h2>Clinic Portal Login</h2>
+    <p style="color: var(--muted); font-size: 13px; margin-bottom: 20px;">Sign in securely to access your private patient records from any device.</p>
+    <div id="authMsg" class="auth-msg"></div>
+    <div style="margin-bottom: 12px;">
+      <label class="field-label" style="display:block; margin-bottom:4px;">Email Address</label>
+      <input type="email" id="emailInput" placeholder="name@example.com" autocomplete="username" />
+    </div>
+    <div style="margin-bottom: 20px;">
+      <label class="field-label" style="display:block; margin-bottom:4px;">Password</label>
+      <input type="password" id="passwordInput" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password" />
+    </div>
+    <button class="btn" id="loginBtn" style="width: 100%; justify-content: center; margin-bottom: 10px;">Sign In</button>
+    <button class="btn ghost" id="signupBtn" style="width: 100%; justify-content: center;">Create Account</button>
+  </div>
+
+  <!-- Main App -->
+  <div class="wrap">
+    <div class="clinic-header">
+      <div class="clinic-header-left">
+        <div class="owner-photo" id="ownerPhoto" title="Click to add photo">
+          <span class="placeholder-icon">&#128100;</span>
+          <div class="photo-overlay">Change<br/>photo</div>
+        </div>
+        <div class="clinic-title-block">
+          <h1>Dr. Vikas Patient Monitoring System</h1>
+          <p>Track patient visits, status, diagnoses and payments securely in the cloud</p>
+        </div>
+        <input type="file" id="photoInput" accept="image/*" style="display:none;" />
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+        <button class="btn ghost small" id="logoutBtn">Sign Out</button>
+        <div class="sync-badge"><span class="sync-dot" id="syncDot"></span><span id="syncText">Synced</span></div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="log">Daily Log</button>
+      <button class="tab" data-tab="reports">Reports &amp; Charts</button>
+    </div>
+
+    <!-- ===== DAILY LOG TAB ===== -->
+    <div class="tab-panel active" id="tab-log">
+      <div class="topbar">
+        <div class="search-input-wrap">
+          <input type="text" id="searchInput" placeholder="Search patient name..." />
+        </div>
+        <div class="topbar-actions">
+          <button class="btn ghost small" id="exportBtn">&#128190; Export CSV</button>
+          <button class="btn" id="addDateBtn">+ Add Today's Date</button>
+        </div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+
+      <div id="groups"></div>
+
+      <div class="empty-state" id="emptyState" style="display:none;">
+        <div class="icon" style="font-size:36px;">&#128203;</div>
+        <p>No active records found. Click "+ Add Today's Date" to begin logging visits.</p>
+      </div>
+    </div>
+
+    <!-- ===== REPORTS TAB ===== -->
+    <div class="tab-panel" id="tab-reports">
+
+      <!-- Monthly summary -->
+      <div class="panel panel-pad">
+        <h3>Monthly Summary</h3>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+          <input type="month" id="monthPicker" class="date-input" style="width:auto;" />
+          <span class="count-pill teal" id="monthPatients">0 patients</span>
+          <span class="count-pill" id="monthVisits">0 visits</span>
+          <span class="count-pill teal" id="monthRevenue">&#8377;0 revenue</span>
+        </div>
+      </div>
+
+      <!-- Date range analytics -->
+      <div class="panel panel-pad">
+        <h3>Date Range Analytics</h3>
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
+          <input type="date" id="rangeStart" class="date-input" style="width: auto;" />
+          <span style="color: var(--muted); font-size: 13px; font-weight: 500;">to</span>
+          <input type="date" id="rangeEnd" class="date-input" style="width: auto;" />
+          <button class="btn ghost small" id="clearRangeBtn">Clear</button>
+        </div>
+        <div id="rangeResults" style="display: none; background: #FAFCFB; border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+          <div style="display: flex; gap: 32px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; flex-wrap: wrap;">
+            <div><div class="field-label">Total Visits</div><div style="font-size: 18px; font-weight: 600; color: var(--teal);" id="rangeTotalVisits">0</div></div>
+            <div><div class="field-label">Unique Patients</div><div style="font-size: 18px; font-weight: 600; color: var(--teal);" id="rangeUniquePatients">0</div></div>
+            <div><div class="field-label">Total Revenue</div><div style="font-size: 18px; font-weight: 600; color: var(--teal);">&#8377;<span id="rangeTotalAmount">0</span></div></div>
+          </div>
+          <div class="field-label" style="margin-bottom: 8px;">Sessions per Patient (in selected range)</div>
+          <div id="rangePatientSessions" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px;"></div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid-2">
+        <div class="panel panel-pad">
+          <h3>Revenue by Month</h3>
+          <div class="chart-box"><canvas id="revenueChart"></canvas></div>
+        </div>
+        <div class="panel panel-pad">
+          <h3>Visits by Month</h3>
+          <div class="chart-box"><canvas id="visitsChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel panel-pad">
+          <h3>Most Common Diagnoses</h3>
+          <div id="diagnosisList" class="bar-list"></div>
+          <div id="diagnosisEmpty" class="empty-state" style="display:none; padding:24px;">No diagnoses recorded yet. Add a diagnosis to any visit to see this chart.</div>
+        </div>
+        <div class="panel panel-pad">
+          <h3>Visit Status Breakdown</h3>
+          <div class="chart-box"><canvas id="statusChart"></canvas></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+  // ============================================================
+  //  CONFIGURATION
+  //  These two values are SAFE to keep in the page. The anon key
+  //  is a public "publishable" key — your data is protected by
+  //  Row Level Security (RLS) policies in Supabase, NOT by hiding
+  //  this key. See README.md / schema.sql for the required setup.
+  //  NOTE: the URL must be the BASE project URL only — no /rest/v1/.
+  // ============================================================
+  const SUPABASE_URL = "https://ofbonqvttorohiurnnpw.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_-OMSRxtogGMuzR5_Mki7dA_CBZHJ3GL";
+
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const PHOTO_KEY = "dr-vikas-owner-photo-v1";
+  let visits = [];
+  let currentUser = null;
+  let expandedReasonIds = new Set();
+  let saveTimer = null;
+  let charts = {};
+
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+
+  // Use LOCAL calendar date (not UTC) so late-night entries in India (UTC+5:30)
+  // are not stamped with the previous day.
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function currentMonthStr() { return todayStr().slice(0, 7); }
+
+  function num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+  // ---------- Sync indicator ----------
+  function setSync(state) {
+    const dot = document.getElementById('syncDot');
+    const txt = document.getElementById('syncText');
+    dot.className = 'sync-dot' + (state === 'saving' ? ' saving' : state === 'error' ? ' error' : '');
+    txt.innerText = state === 'saving' ? 'Saving…' : state === 'error' ? 'Save failed' : 'Synced';
+  }
+
+  // ---------- Auth ----------
+  async function initApp() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) {
+      document.getElementById('authContainer').style.display = 'block';
+      document.querySelector('.wrap').style.display = 'none';
+      return;
+    }
+    currentUser = session.user;
+    document.getElementById('authContainer').style.display = 'none';
+    document.querySelector('.wrap').style.display = 'block';
+    document.getElementById('monthPicker').value = currentMonthStr();
+    await loadFromCloud();
+  }
+
+  async function handleLogin() {
+    hideMsg();
+    const email = document.getElementById('emailInput').value.trim();
+    const password = document.getElementById('passwordInput').value;
+    if (!email || !password) return showMsg("Please enter email and password.", true);
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) return showMsg(error.message, true);
+    initApp();
+  }
+
+  async function handleSignUp() {
+    hideMsg();
+    const email = document.getElementById('emailInput').value.trim();
+    const password = document.getElementById('passwordInput').value;
+    if (!email || !password) return showMsg("Please enter email and password.", true);
+    if (password.length < 6) return showMsg("Password must be at least 6 characters.", true);
+    const { data, error } = await supabaseClient.auth.signUp({ email, password });
+    if (error) return showMsg(error.message, true);
+    // If email confirmation is ON, there is no active session yet.
+    if (!data.session) {
+      showMsg("Account created. Please check your email to confirm, then sign in.", false);
+      return;
+    }
+    initApp();
+  }
+
+  async function handleLogout() {
+    await supabaseClient.auth.signOut();
+    currentUser = null;
+    visits = [];
+    document.getElementById('authContainer').style.display = 'block';
+    document.querySelector('.wrap').style.display = 'none';
+  }
+
+  function showMsg(msg, isError) {
+    const el = document.getElementById('authMsg');
+    el.innerText = msg;
+    el.className = 'auth-msg ' + (isError ? 'error' : 'ok');
+    el.style.display = 'block';
+  }
+  function hideMsg() { document.getElementById('authMsg').style.display = 'none'; }
+
+  // ---------- Cloud data ----------
+  async function loadFromCloud() {
+    try {
+      const { data, error } = await supabaseClient
+        .from('visits').select('*').order('date', { ascending: false });
+      if (error) throw error;
+      // Map DB (snake_case) -> app (camelCase)
+      visits = (data || []).map(r => ({
+        id: r.id, date: r.date, patientName: r.patient_name || "", status: r.status || "",
+        amount: r.amount != null ? String(r.amount) : "", diagnosis: r.diagnosis || "",
+        reason: r.reason || "", updatedAt: r.updated_at_label || ""
+      }));
+      setSync('ok');
+    } catch (e) {
+      console.error("Failed to load from cloud", e);
+      setSync('error');
+      visits = [];
+    }
+    loadPhoto();
+    render();
+  }
+
+  function toRow(v) {
+    return {
+      id: v.id, user_id: currentUser.id, date: v.date,
+      patient_name: v.patientName || null, status: v.status || null,
+      amount: v.amount !== "" && v.amount != null ? num(v.amount) : null,
+      diagnosis: v.diagnosis || null, reason: v.reason || null,
+      updated_at_label: v.updatedAt || null
+    };
+  }
+
+  // Only push rows that carry real content, so blank placeholder rows
+  // don't pile up in the database.
+  function isMeaningful(v) {
+    return (v.patientName && v.patientName.trim()) || v.status || (v.amount !== "" && v.amount != null) || (v.diagnosis && v.diagnosis.trim());
+  }
+
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    setSync('saving');
+    saveTimer = setTimeout(saveAll, 700);
+  }
+
+  async function saveAll() {
+    if (!currentUser) return;
+    const payload = visits.filter(isMeaningful).map(toRow);
+    if (payload.length === 0) { setSync('ok'); return; }
+    try {
+      const { error } = await supabaseClient.from('visits').upsert(payload);
+      if (error) throw error;
+      setSync('ok');
+    } catch (e) {
+      console.error("Cloud sync error:", e);
+      setSync('error');
+    }
+  }
+
+  // ---------- Photo (local per-device) ----------
+  function loadPhoto() {
+    try {
+      const dataUrl = localStorage.getItem(PHOTO_KEY);
+      if (dataUrl) document.getElementById("ownerPhoto").innerHTML =
+        `<img src="${dataUrl}" alt="Owner photo" /><div class="photo-overlay">Change<br/>photo</div>`;
+    } catch (e) {}
+  }
+  document.getElementById("ownerPhoto").addEventListener("click", () => document.getElementById("photoInput").click());
+  document.getElementById("photoInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { try { localStorage.setItem(PHOTO_KEY, reader.result); loadPhoto(); } catch (err) { console.error(err); } };
+    reader.readAsDataURL(file);
+  });
+
+  // ---------- Log operations ----------
+  function groupByDate() {
+    const query = (document.getElementById("searchInput")?.value || "").toLowerCase().trim();
+    const filtered = visits.filter(v => (v.patientName || "").toLowerCase().includes(query));
+    const map = {};
+    filtered.forEach(v => { (map[v.date] = map[v.date] || []).push(v); });
+    return Object.keys(map).sort((a, b) => b.localeCompare(a)).map(date => ({ date, rows: map[date] }));
+  }
+
+  function addTodayDate() {
+    visits.push({ id: uid(), date: todayStr(), patientName: "", status: "", amount: "", diagnosis: "", reason: "", updatedAt: "" });
+    render();
+  }
+  function addPatient(date) {
+    visits.push({ id: uid(), date, patientName: "", status: "", amount: "", diagnosis: "", reason: "", updatedAt: "" });
+    render();
+  }
+
+  function updateField(id, field, value) {
+    const v = visits.find(x => x.id === id);
+    if (v) { v[field] = value; scheduleSave(); }
+  }
+
+  function savePatientRow(id, btnElement) {
+    const rowElement = btnElement.closest('.patient-row');
+    const v = visits.find(x => x.id === id);
+    if (!v || !rowElement) return;
+    v.patientName = rowElement.querySelector('.p-name').value;
+    v.amount = rowElement.querySelector('.p-amount').value;
+    v.diagnosis = rowElement.querySelector('.p-diagnosis').value;
+    const reasonInput = rowElement.parentElement.querySelector(`.reason-row[data-for="${id}"] .p-reason`);
+    if (reasonInput) v.reason = reasonInput.value;
+
+    const now = new Date();
+    v.updatedAt = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                  ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    expandedReasonIds.delete(id);
+    saveAll();
+    render();
+
+    const newBtn = document.querySelector(`.patient-row[data-id="${id}"] .save-row-btn`);
+    if (newBtn) {
+      newBtn.innerText = "Saved ✓"; newBtn.classList.add("saved");
+      setTimeout(() => { newBtn.innerText = "Save"; newBtn.classList.remove("saved"); }, 1500);
+    }
+  }
+
+  function handleStatusChange(selectEl) {
+    const id = selectEl.closest('.patient-row')?.dataset.id;
+    const v = visits.find(x => x.id === id);
+    if (!v) return;
+    v.status = selectEl.value;
+    if (v.status === "Not completed") expandedReasonIds.add(id); else expandedReasonIds.delete(id);
+    scheduleSave();
+    render();
+  }
+
+  function toggleReason(id) { expandedReasonIds.add(id); render(); }
+
+  async function updateSingleVisitDate(id, newDate) {
+    if (newDate > todayStr()) { alert("Future dates cannot be selected."); render(); return; }
+    const v = visits.find(x => x.id === id);
+    if (v) { v.date = newDate; if (isMeaningful(v)) await saveAll(); render(); }
+  }
+
+  async function deleteVisit(id) {
+    const v = visits.find(x => x.id === id);
+    if (isMeaningful(v) && !confirm("Delete this patient record permanently?")) return;
+    visits = visits.filter(x => x.id !== id);
+    render();
+    try {
+      setSync('saving');
+      const { error } = await supabaseClient.from('visits').delete().eq('id', id);
+      if (error) throw error;
+      setSync('ok');
+    } catch (e) { console.error("Delete failed", e); setSync('error'); }
+  }
+
+  function exportCSV() {
+    let csv = "Date,Patient Name,Status,Amount,Diagnosis,Reason,Last Modified\n";
+    const esc = s => `"${String(s == null ? '' : s).replace(/"/g, '""')}"`;
+    visits.slice().sort((a, b) => b.date.localeCompare(a.date)).forEach(v => {
+      csv += [v.date, v.patientName, v.status, v.amount, v.diagnosis, v.reason, v.updatedAt].map(esc).join(",") + "\n";
+    });
+    const blob = new Blob(["﻿" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `patient_log_${todayStr()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- Stats & render ----------
+  function renderStats() {
+    const total = visits.length;
+    const revenue = visits.reduce((s, v) => s + num(v.amount), 0);
+    const completed = visits.filter(v => v.status === "Completed").length;
+    const unique = new Set(visits.filter(v => v.patientName && v.patientName.trim()).map(v => v.patientName.trim().toLowerCase())).size;
+    document.getElementById("stats").innerHTML = `
+      <div class="stat teal"><div class="label">Total visits</div><div class="value">${total}</div></div>
+      <div class="stat teal"><div class="label">Completed</div><div class="value">${completed}</div></div>
+      <div class="stat amber"><div class="label">Unique patients</div><div class="value">${unique}</div></div>
+      <div class="stat teal"><div class="label">Total revenue</div><div class="value">&#8377;${revenue.toLocaleString('en-IN')}</div></div>`;
+  }
+
+  function render() {
+    renderStats();
+    renderReports();
+    const groups = groupByDate();
+    const container = document.getElementById("groups");
+    const today = todayStr();
+    document.getElementById("emptyState").style.display = groups.length ? "none" : "block";
+
+    // build a datalist of known diagnoses for quick reuse
+    const knownDx = [...new Set(visits.map(v => (v.diagnosis || "").trim()).filter(Boolean))];
+    const dxOptions = knownDx.map(d => `<option value="${escapeAttr(d)}"></option>`).join("");
+
+    container.innerHTML = groups.map(g => {
+      const dayAmount = g.rows.reduce((s, v) => s + num(v.amount), 0);
+      return `
+      <div class="date-group">
+        <div class="date-header">
+          <div class="date-header-left">
+            <span style="font-family:'JetBrains Mono',monospace; font-weight:600; font-size:14px; color:var(--teal);">${g.date}</span>
+            <span class="count-pill">${g.rows.length} patient${g.rows.length === 1 ? "" : "s"}</span>
+            <span class="count-pill teal">&#8377;${dayAmount.toLocaleString('en-IN')} collected</span>
+          </div>
+          <button class="btn ghost small" onclick="addPatient('${g.date}')">+ Add patient</button>
+        </div>
+        <div class="patients">
+          <div class="header-row">
+            <div class="field-label">Patient name</div>
+            <div class="field-label">Diagnosis</div>
+            <div class="field-label">Visit status</div>
+            <div class="field-label">Amount</div>
+            <div class="field-label">Action</div>
+            <div></div>
+          </div>
+          ${g.rows.map(v => {
+            const isNotCompleted = v.status === "Not completed";
+            const isCompleted = v.status === "Completed";
+            const statusClass = isNotCompleted ? "status-noshow" : (isCompleted ? "status-completed" : "status-pending");
+            const isExpanded = expandedReasonIds.has(v.id);
+            return `
+            <div class="patient-row" data-id="${v.id}">
+              <input type="text" class="p-name" placeholder="Patient name" value="${escapeAttr(v.patientName)}" oninput="updateField('${v.id}','patientName',this.value)" />
+              <input type="text" class="p-diagnosis" list="dxList" placeholder="Diagnosis" value="${escapeAttr(v.diagnosis)}" oninput="updateField('${v.id}','diagnosis',this.value)" />
+              <select class="p-status ${statusClass}" onchange="handleStatusChange(this)">
+                <option value="" disabled ${!v.status ? "selected" : ""}>Visit status</option>
+                <option value="Completed" ${isCompleted ? "selected" : ""}>Completed</option>
+                <option value="Not completed" ${isNotCompleted ? "selected" : ""}>Not completed</option>
+              </select>
+              <input type="number" class="p-amount" placeholder="0" value="${escapeAttr(v.amount)}" oninput="updateField('${v.id}','amount',this.value)" />
+              <button class="btn save-row-btn" onclick="savePatientRow('${v.id}',this)">Save</button>
+              <div class="del-icon" onclick="deleteVisit('${v.id}')" title="Delete">&#10005;</div>
+            </div>
+            <div style="grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; padding:0 8px 6px; font-size:11px; color:var(--muted);">
+              <span>${v.updatedAt ? 'Last modified: ' + escapeAttr(v.updatedAt) : ''}</span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span>Move to date:</span>
+                <input type="date" class="date-input" style="padding:2px 6px; font-size:12px;" value="${v.date}" max="${today}" onchange="updateSingleVisitDate('${v.id}',this.value)" />
+              </div>
+            </div>
+            <div class="reason-row ${isNotCompleted && isExpanded ? "" : "hidden"}" data-for="${v.id}">
+              <div class="field-label">Reason for not completed</div>
+              <input type="text" class="p-reason" placeholder="Enter reason..." value="${escapeAttr(v.reason)}" oninput="updateField('${v.id}','reason',this.value)" />
+            </div>
+            ${isNotCompleted && !isExpanded ? `
+              <div class="reason-chip" onclick="toggleReason('${v.id}')">
+                <span>${v.reason ? "Reason: " + escapeAttr(v.reason) : "No reason added yet"}</span>
+                <span class="edit-hint">Tap to edit</span>
+              </div>` : ""}`;
+          }).join("")}
+        </div>
+      </div>`;
+    }).join("") + `<datalist id="dxList">${dxOptions}</datalist>`;
+  }
+
+  // ---------- Reports ----------
+  function renderReports() {
+    renderMonthlySummary();
+    calculateRange();
+    renderDiagnoses();
+    renderCharts();
+  }
+
+  function renderMonthlySummary() {
+    const m = document.getElementById('monthPicker').value || currentMonthStr();
+    const rows = visits.filter(v => (v.date || "").slice(0, 7) === m);
+    const revenue = rows.reduce((s, v) => s + num(v.amount), 0);
+    const patients = new Set(rows.filter(v => v.patientName && v.patientName.trim()).map(v => v.patientName.trim().toLowerCase())).size;
+    document.getElementById('monthPatients').innerText = `${patients} patient${patients === 1 ? '' : 's'}`;
+    document.getElementById('monthVisits').innerText = `${rows.length} visit${rows.length === 1 ? '' : 's'}`;
+    document.getElementById('monthRevenue').innerText = `₹${revenue.toLocaleString('en-IN')} revenue`;
+  }
+
+  function calculateRange() {
+    const start = document.getElementById('rangeStart').value;
+    const end = document.getElementById('rangeEnd').value;
+    const resultsDiv = document.getElementById('rangeResults');
+    if (!start || !end) { resultsDiv.style.display = 'none'; return; }
+    const startDate = start <= end ? start : end;
+    const endDate = start <= end ? end : start;
+    const rangeVisits = visits.filter(v => v.date >= startDate && v.date <= endDate);
+    const totalAmount = rangeVisits.reduce((s, v) => s + num(v.amount), 0);
+
+    const patientCounts = {};
+    rangeVisits.forEach(v => {
+      const name = (v.patientName || "").trim();
+      if (name) patientCounts[name] = (patientCounts[name] || 0) + 1;
+    });
+
+    document.getElementById('rangeTotalVisits').innerText = rangeVisits.length;
+    document.getElementById('rangeUniquePatients').innerText = Object.keys(patientCounts).length;
+    document.getElementById('rangeTotalAmount').innerText = totalAmount.toLocaleString('en-IN');
+
+    document.getElementById('rangePatientSessions').innerHTML = Object.entries(patientCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => `
+        <div style="background:#fff; border:1px solid var(--border); padding:8px 12px; border-radius:6px; font-size:13.5px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:500;">${escapeAttr(name)}</span>
+          <span class="count-pill teal" style="margin:0;">${count} session${count === 1 ? '' : 's'}</span>
+        </div>`).join('');
+    resultsDiv.style.display = 'block';
+  }
+
+  function renderDiagnoses() {
+    const counts = {};
+    visits.forEach(v => {
+      const d = (v.diagnosis || "").trim();
+      if (d) counts[d] = (counts[d] || 0) + 1;
+    });
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const listEl = document.getElementById('diagnosisList');
+    const emptyEl = document.getElementById('diagnosisEmpty');
+    if (entries.length === 0) { listEl.innerHTML = ''; emptyEl.style.display = 'block'; return; }
+    emptyEl.style.display = 'none';
+    const max = entries[0][1];
+    listEl.innerHTML = entries.map(([name, count]) => `
+      <div class="bar-item">
+        <span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeAttr(name)}">${escapeAttr(name)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${(count / max) * 100}%"></div></div>
+        <span class="bar-value">${count}</span>
+      </div>`).join('');
+  }
+
+  function monthLabel(ym) {
+    const [y, m] = ym.split('-');
+    return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+  }
+
+  function renderCharts() {
+    if (typeof Chart === 'undefined') return;
+    // aggregate by month
+    const byMonth = {};
+    visits.forEach(v => {
+      const ym = (v.date || "").slice(0, 7);
+      if (!ym) return;
+      byMonth[ym] = byMonth[ym] || { revenue: 0, visits: 0 };
+      byMonth[ym].revenue += num(v.amount);
+      byMonth[ym].visits += 1;
+    });
+    const months = Object.keys(byMonth).sort().slice(-12);
+    const labels = months.map(monthLabel);
+
+    drawChart('revenueChart', 'bar', labels, months.map(m => byMonth[m].revenue), '#0F6E56', 'Revenue (₹)');
+    drawChart('visitsChart', 'bar', labels, months.map(m => byMonth[m].visits), '#5DCAA5', 'Visits');
+
+    const completed = visits.filter(v => v.status === "Completed").length;
+    const notCompleted = visits.filter(v => v.status === "Not completed").length;
+    const pending = visits.length - completed - notCompleted;
+    drawDoughnut('statusChart', ['Completed', 'Not completed', 'No status'], [completed, notCompleted, pending], ['#0F6E56', '#D85A30', '#C7D2CE']);
+  }
+
+  function drawChart(id, type, labels, data, color, label) {
+    const ctx = document.getElementById(id);
+    if (!ctx) return;
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(ctx, {
+      type,
+      data: { labels, datasets: [{ label, data, backgroundColor: color, borderRadius: 6, maxBarThickness: 44 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+  }
+
+  function drawDoughnut(id, labels, data, colors) {
+    const ctx = document.getElementById(id);
+    if (!ctx) return;
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    });
+  }
+
+  function escapeAttr(str) {
+    if (str === undefined || str === null) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // ---------- Wiring ----------
+  document.getElementById("loginBtn").addEventListener("click", handleLogin);
+  document.getElementById("signupBtn").addEventListener("click", handleSignUp);
+  document.getElementById("logoutBtn").addEventListener("click", handleLogout);
+  document.getElementById("addDateBtn").addEventListener("click", addTodayDate);
+  document.getElementById("exportBtn").addEventListener("click", exportCSV);
+  document.getElementById("searchInput").addEventListener("input", render);
+  document.getElementById("passwordInput").addEventListener("keydown", e => { if (e.key === 'Enter') handleLogin(); });
+  document.getElementById("monthPicker").addEventListener("change", renderMonthlySummary);
+  document.getElementById("rangeStart").addEventListener("change", calculateRange);
+  document.getElementById("rangeEnd").addEventListener("change", calculateRange);
+  document.getElementById("clearRangeBtn").addEventListener("click", () => {
+    document.getElementById('rangeStart').value = ''; document.getElementById('rangeEnd').value = ''; calculateRange();
+  });
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'reports') renderReports();
+    });
+  });
+
+  // Keep auth state in sync (e.g. token refresh / sign-out in another tab)
+  supabaseClient.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') { currentUser = null; }
+  });
+
+  initApp();
+</script>
+</body>
+</html>
