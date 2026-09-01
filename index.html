@@ -89,8 +89,6 @@
   .btn.ghost { background: transparent; color: var(--teal); border: 1.5px solid var(--teal-mid); }
   .btn.ghost:hover { background: var(--teal-light); }
   .btn.small { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
-  .btn.save-row-btn { background: var(--teal); color: #fff; padding: 6px 12px; font-size: 12.5px; border-radius: 6px; }
-  .btn.save-row-btn.saved { background: #2E7D32; }
 
   /* Tabs */
   .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
@@ -126,16 +124,7 @@
   .count-pill.coral { color: var(--coral); background: var(--coral-light); }
   .count-pill.teal { color: var(--teal); background: var(--teal-light); }
 
-  .patients { padding: 6px 10px 10px; }
-  .patient-row {
-    display: grid; grid-template-columns: 1.5fr 1.3fr 1fr 0.8fr 70px 30px; gap: 8px; align-items: center;
-    padding: 10px 8px; border-radius: 10px; transition: background 0.15s;
-  }
-  .patient-row:hover { background: #FAFBFA; }
-  .patient-row + .patient-row { border-top: 1px solid #F0F3F1; }
-
   .field-label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 8px; margin-bottom: 2px; }
-  .header-row { display: grid; grid-template-columns: 1.5fr 1.3fr 1fr 0.8fr 70px 30px; gap: 8px; padding: 4px 8px 6px; }
 
   input[type=text], input[type=number], input[type=date], input[type=month], input[type=email], input[type=password], select {
     width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-family: 'Inter', sans-serif;
@@ -143,28 +132,6 @@
   }
   input:focus, select:focus { border-color: var(--teal-mid); box-shadow: 0 0 0 3px var(--teal-light); }
   input[list]::-webkit-calendar-picker-indicator { opacity: 0.5; }
-
-  select.status-completed { background: #EAF3DE; color: #3B6D11; font-weight: 500; border-color: #C0DD97; }
-  select.status-noshow { background: var(--coral-light); color: var(--coral); font-weight: 500; border-color: var(--coral-mid); }
-  select.status-pending { background: #fff; color: var(--muted); font-weight: 500; border-color: var(--border); }
-
-  .reason-row { grid-column: 1 / -1; margin: -2px 0 6px; padding: 0 8px; }
-  .reason-row input { border-color: var(--coral-mid); background: #FFFBFA; }
-  .reason-row .field-label { color: var(--coral); }
-  .reason-row.hidden { display: none; }
-
-  .reason-chip {
-    grid-column: 1 / -1; margin: -4px 8px 8px; padding: 6px 10px; background: var(--coral-light);
-    border: 1px dashed var(--coral-mid); border-radius: 8px; font-size: 12.5px; color: var(--coral); cursor: pointer;
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  }
-  .reason-chip .edit-hint { font-size: 11px; color: var(--muted); font-weight: 500; white-space: nowrap; }
-
-  .del-icon {
-    display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px;
-    color: #B7C2BE; cursor: pointer; font-size: 16px; transition: background 0.15s, color 0.15s;
-  }
-  .del-icon:hover { background: var(--coral-light); color: var(--coral); }
 
   .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
 
@@ -221,8 +188,6 @@
   @media (max-width: 900px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
     .grid-2 { grid-template-columns: 1fr; }
-    .patient-row, .header-row { grid-template-columns: 1fr; gap: 6px; }
-    .del-icon { justify-self: end; }
     .bar-item { grid-template-columns: 120px 1fr auto; }
   }
 </style>
@@ -321,7 +286,7 @@
         </div>
         <div class="topbar-actions">
           <button class="btn ghost small" id="exportBtn">&#128190; Export CSV</button>
-          <button class="btn" id="addDateBtn">+ Add Today's Date</button>
+          <button class="btn" id="addDateBtn">+ Add Visit</button>
         </div>
       </div>
 
@@ -332,7 +297,7 @@
 
       <div class="empty-state" id="emptyState" style="display:none;">
         <div class="icon" style="font-size:36px;">&#128203;</div>
-        <p>No active records found. Click "+ Add Today's Date" to begin logging visits.</p>
+        <p>No records yet. Click "+ Add Visit" to log your first patient visit.</p>
       </div>
     </div>
 
@@ -436,8 +401,6 @@
   let visits = [];
   let currentUser = null;
   let currentProfile = { full_name: "" };
-  let expandedReasonIds = new Set();
-  let saveTimer = null;
   let charts = {};
 
   function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
@@ -602,7 +565,7 @@
         id: r.id, date: r.date, patientName: r.patient_name || "", status: r.status || "",
         amount: r.amount != null ? String(r.amount) : "", diagnosis: r.diagnosis || "",
         reason: r.reason || "", updatedAt: r.updated_at_label || ""
-      }));
+      })).filter(isMeaningful);   // hide old blank placeholder rows from the UI
       setSync('ok');
     } catch (e) {
       console.error("Failed to load from cloud", e);
@@ -629,18 +592,12 @@
     return (v.patientName && v.patientName.trim()) || v.status || (v.amount !== "" && v.amount != null) || (v.diagnosis && v.diagnosis.trim());
   }
 
-  function scheduleSave() {
-    if (saveTimer) clearTimeout(saveTimer);
-    setSync('saving');
-    saveTimer = setTimeout(saveAll, 700);
-  }
-
-  async function saveAll() {
+  // Save a single visit (used on add/edit) — one network write, not the whole list.
+  async function saveOne(v) {
     if (!currentUser) return;
-    const payload = visits.filter(isMeaningful).map(toRow);
-    if (payload.length === 0) { setSync('ok'); return; }
+    setSync('saving');
     try {
-      const { error } = await supabaseClient.from('visits').upsert(payload);
+      const { error } = await supabaseClient.from('visits').upsert(toRow(v));
       if (error) throw error;
       setSync('ok');
     } catch (e) {
@@ -734,63 +691,18 @@
     const amountStr = amountRaw === '' ? '' : String(amount);
     const reasonStr = status === 'Not completed' ? reason : '';
 
+    let saved;
     if (editingId) {
-      const v = visits.find(x => x.id === editingId);
-      if (v) Object.assign(v, { date, patientName: name, diagnosis, status, amount: amountStr, reason: reasonStr, updatedAt: stamp });
+      saved = visits.find(x => x.id === editingId);
+      if (saved) Object.assign(saved, { date, patientName: name, diagnosis, status, amount: amountStr, reason: reasonStr, updatedAt: stamp });
     } else {
-      visits.push({ id: uid(), date, patientName: name, status, amount: amountStr, diagnosis, reason: reasonStr, updatedAt: stamp });
+      saved = { id: uid(), date, patientName: name, status, amount: amountStr, diagnosis, reason: reasonStr, updatedAt: stamp };
+      visits.push(saved);
     }
     editingId = null;
     closeEntryModal();
     render();
-    await saveAll();
-  }
-
-  function updateField(id, field, value) {
-    const v = visits.find(x => x.id === id);
-    if (v) { v[field] = value; scheduleSave(); }
-  }
-
-  function savePatientRow(id, btnElement) {
-    const rowElement = btnElement.closest('.patient-row');
-    const v = visits.find(x => x.id === id);
-    if (!v || !rowElement) return;
-    v.patientName = rowElement.querySelector('.p-name').value;
-    v.amount = rowElement.querySelector('.p-amount').value;
-    v.diagnosis = rowElement.querySelector('.p-diagnosis').value;
-    const reasonInput = rowElement.parentElement.querySelector(`.reason-row[data-for="${id}"] .p-reason`);
-    if (reasonInput) v.reason = reasonInput.value;
-
-    const now = new Date();
-    v.updatedAt = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-                  ', ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    expandedReasonIds.delete(id);
-    saveAll();
-    render();
-
-    const newBtn = document.querySelector(`.patient-row[data-id="${id}"] .save-row-btn`);
-    if (newBtn) {
-      newBtn.innerText = "Saved ✓"; newBtn.classList.add("saved");
-      setTimeout(() => { newBtn.innerText = "Save"; newBtn.classList.remove("saved"); }, 1500);
-    }
-  }
-
-  function handleStatusChange(selectEl) {
-    const id = selectEl.closest('.patient-row')?.dataset.id;
-    const v = visits.find(x => x.id === id);
-    if (!v) return;
-    v.status = selectEl.value;
-    if (v.status === "Not completed") expandedReasonIds.add(id); else expandedReasonIds.delete(id);
-    scheduleSave();
-    render();
-  }
-
-  function toggleReason(id) { expandedReasonIds.add(id); render(); }
-
-  async function updateSingleVisitDate(id, newDate) {
-    if (newDate > todayStr()) { alert("Future dates cannot be selected."); render(); return; }
-    const v = visits.find(x => x.id === id);
-    if (v) { v.date = newDate; if (isMeaningful(v)) await saveAll(); render(); }
+    if (saved) await saveOne(saved);
   }
 
   async function deleteVisit(id) {
@@ -876,7 +788,6 @@
             <span class="count-pill">${g.rows.length} patient${g.rows.length === 1 ? "" : "s"}</span>
             <span class="count-pill teal">&#8377;${dayAmount.toLocaleString('en-IN')} collected</span>
           </div>
-          <button class="btn ghost small" onclick="addPatient('${g.date}')">+ Add patient</button>
         </div>
         <div class="table-scroll">
           <table class="log-table">
